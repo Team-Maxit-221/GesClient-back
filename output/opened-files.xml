@@ -1,0 +1,2008 @@
+<Opened Files>
+<File Name>
+src/app.js
+</File Name>
+<File Content>
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
+import dotenv from 'dotenv';
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './config/swagger.js';
+import prisma, { testConnection } from './config/database.js';
+import numeroClientRouter from './routes/numeroClientRouter.js';
+import demandeRouter from './routes/demandeRouter.js';
+import logRouter from './routes/logRouter.js';
+import clientRouter from './routes/clientRouter.js';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Test de connexion à la base MongoDB
+await testConnection();
+
+// Middleware de sécurité
+app.use(helmet());
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:4200',
+  
+];
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
+app.use(morgan('combined'));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limite chaque IP à 100 requêtes par fenêtre
+  message: 'Trop de requêtes depuis cette IP, veuillez réessayer plus tard.'
+});
+app.use(limiter);
+
+// Middleware pour parser le JSON
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Servir les fichiers statiques
+app.use('/uploads', express.static('uploads'));
+
+// Route de base
+app.get('/', (req, res) => {
+  res.json({
+    message: 'API Gesclient - Système de gestion',
+    version: '1.0.0',
+    status: 'running'
+  });
+});
+
+// Swagger uniquement
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/api/clients', clientRouter);
+app.use('/api/demandes', demandeRouter);
+app.use('/api/logs', logRouter);
+app.use('/api/numeros', numeroClientRouter);
+
+// Gestion des erreurs 404
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route non trouvée'
+  });
+});
+
+// Middleware de gestion d'erreurs global
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    success: false,
+    message: 'Erreur interne du serveur',
+    error: process.env.NODE_ENV === 'development' ? err.message : {}
+  });
+});
+
+// Démarrage du serveur
+app.listen(PORT, () => {
+  console.log(`🚀 Serveur démarré sur le port ${PORT}`);
+  console.log(`📊 Mode: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 URL: http://localhost:${PORT}`);
+});
+
+export default app; 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+package.json
+</File Name>
+<File Content>
+{
+  "name": "Gesclient",
+  "version": "1.0.0",
+  "description": "API de gestion de quincaillerie (Node.js/Express + Prisma + MongoDB)",
+  "main": "src/app.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/app.js",
+    "start": "node src/app.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "keywords": [
+    "express",
+    "prisma",
+    "mongodb",
+    "swagger",
+    "quincaillerie"
+  ],
+  "author": "Barro et frère",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^5.12.0",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.0.0",
+    "helmet": "^7.0.0",
+    "morgan": "^1.10.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3",
+    "prisma": "^5.12.0"
+  }
+}
+
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+.env
+</File Name>
+<File Content>
+   DATABASE_URL="mongodb+srv://babaissa30:786360662@cluster0.qwsngu8.mongodb.net/gesclient"
+PORT=3002
+   SERVER_KEY=local #prod
+  LOCAL_SERVER_URL=http://localhost:3002
+  PROD_SERVER_URL=https://quincaillerie-latest.onrender.com
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/routes/clientRouter.js
+</File Name>
+<File Content>
+import { Router } from 'express';
+import ClientController from '../controllers/ClientController.js';
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Clients
+ *   description: Gestion des clients Orange
+ */
+
+/**
+ * @swagger
+ * /api/clients:
+ *   post:
+ *     summary: Créer un nouveau client
+ *     tags: [Clients]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - nom
+ *               - prenom
+ *               - cni
+ *             properties:
+ *               nom:
+ *                 type: string
+ *               prenom:
+ *                 type: string
+ *               cni:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Client créé avec succès
+ *       409:
+ *         description: CNI déjà utilisée
+ *       422:
+ *         description: Données invalides
+ */
+router.post('/', ClientController.create);
+
+/**
+ * @swagger
+ * /api/clients:
+ *   get:
+ *     summary: Liste tous les clients
+ *     tags: [Clients]
+ *     responses:
+ *       200:
+ *         description: Liste des clients
+ */
+router.get('/', ClientController.getAll);
+
+/**
+ * @swagger
+ * /api/clients/{id}:
+ *   get:
+ *     summary: Récupère un client par son ID
+ *     tags: [Clients]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Détail du client
+ *       404:
+ *         description: Client non trouvé
+ */
+router.get('/:id', ClientController.getById);
+
+/**
+ * @swagger
+ * /api/clients/{id}:
+ *   put:
+ *     summary: Met à jour un client
+ *     tags: [Clients]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nom:
+ *                 type: string
+ *               prenom:
+ *                 type: string
+ *               cni:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Client mis à jour
+ *       404:
+ *         description: Client non trouvé
+ */
+router.put('/:id', ClientController.update);
+
+/**
+ * @swagger
+ * /api/clients/{id}:
+ *   delete:
+ *     summary: Supprime un client
+ *     tags: [Clients]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Client supprimé
+ *       404:
+ *         description: Client non trouvé
+ */
+router.delete('/:id', ClientController.delete);
+
+export default router; 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/controllers/ClientController.js
+</File Name>
+<File Content>
+import ClientService from '../services/ClientService.js';
+import ApiResponse from '../responses/ApiResponse.js';
+
+export default class ClientController {
+  static async create(req, res, next) {
+    try {
+      const client = await ClientService.createClient(req.body);
+      return ApiResponse.created(res, client, 'Client créé avec succès');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getAll(req, res, next) {
+    try {
+      const clients = await ClientService.getAllClients();
+      return ApiResponse.success(res, clients, 'Liste des clients');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getById(req, res, next) {
+    try {
+      const client = await ClientService.getClientById(req.params.id);
+      return ApiResponse.success(res, client, 'Détail du client');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async update(req, res, next) {
+    try {
+      const client = await ClientService.updateClient(req.params.id, req.body);
+      return ApiResponse.success(res, client, 'Client mis à jour');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async delete(req, res, next) {
+    try {
+      await ClientService.deleteClient(req.params.id);
+      return ApiResponse.success(res, null, 'Client supprimé');
+    } catch (error) {
+      next(error);
+    }
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/services/ClientService.js
+</File Name>
+<File Content>
+import prisma from '../config/database.js';
+import { NotFoundException, ValidationException } from '../exceptions/AppException.js';
+
+function validateSenegalCNI(cni) {
+  // Doit être composé de 17 chiffres
+  if (!/^\d{17}$/.test(cni)) {
+    throw new ValidationException('Le numéro CNI doit contenir exactement 17 chiffres.');
+  }
+  // Doit commencer par 1 ou 2
+  if (!(cni.startsWith('1') || cni.startsWith('2'))) {
+    throw new ValidationException('Le numéro CNI doit commencer par 1 ou 2.');
+  }
+  return cni;
+}
+
+export default class ClientService {
+  static async createClient(data) {
+    data.cni = validateSenegalCNI(data.cni);
+    return await prisma.client.create({ data });
+  }
+
+  static async getAllClients() {
+    return await prisma.client.findMany({ include: { numeroClients: true } });
+  }
+
+  static async getClientById(id) {
+    const client = await prisma.client.findUnique({ where: { id }, include: { numeroClients: true } });
+    if (!client) throw new NotFoundException('Client non trouvé');
+    return client;
+  }
+
+  static async updateClient(id, data) {
+    if (data.cni) {
+      data.cni = validateSenegalCNI(data.cni);
+    }
+    try {
+      return await prisma.client.update({ where: { id }, data });
+    } catch (error) {
+      if (error.code === 'P2025') throw new NotFoundException('Client non trouvé');
+      throw new ValidationException(error.message);
+    }
+  }
+
+  static async deleteClient(id) {
+    try {
+      await prisma.client.delete({ where: { id } });
+      return true;
+    } catch (error) {
+      if (error.code === 'P2025') throw new NotFoundException('Client non trouvé');
+      throw new ValidationException(error.message);
+    }
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/routes/logRouter.js
+</File Name>
+<File Content>
+import { Router } from 'express';
+import LogController from '../controllers/LogController.js';
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Logs
+ *   description: Gestion des logs (audit, debug)
+ */
+
+/**
+ * @swagger
+ * /api/logs:
+ *   post:
+ *     summary: Créer un log
+ *     tags: [Logs]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - action
+ *               - message
+ *             properties:
+ *               action:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Log créé avec succès
+ *       422:
+ *         description: Données invalides
+ */
+router.post('/', LogController.create);
+
+/**
+ * @swagger
+ * /api/logs:
+ *   get:
+ *     summary: Liste tous les logs
+ *     tags: [Logs]
+ *     responses:
+ *       200:
+ *         description: Liste des logs
+ */
+router.get('/', LogController.getAll);
+
+/**
+ * @swagger
+ * /api/logs/{id}:
+ *   get:
+ *     summary: Récupère un log par son ID
+ *     tags: [Logs]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Détail du log
+ *       404:
+ *         description: Log non trouvé
+ */
+router.get('/:id', LogController.getById);
+
+/**
+ * @swagger
+ * /api/logs/{id}:
+ *   put:
+ *     summary: Met à jour un log
+ *     tags: [Logs]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               action:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Log mis à jour
+ *       404:
+ *         description: Log non trouvé
+ */
+router.put('/:id', LogController.update);
+
+/**
+ * @swagger
+ * /api/logs/{id}:
+ *   delete:
+ *     summary: Supprime un log
+ *     tags: [Logs]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Log supprimé
+ *       404:
+ *         description: Log non trouvé
+ */
+router.delete('/:id', LogController.delete);
+
+export default router; 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/controllers/LogController.js
+</File Name>
+<File Content>
+import LogService from '../services/LogService.js';
+import ApiResponse from '../responses/ApiResponse.js';
+
+export default class LogController {
+  static async create(req, res, next) {
+    try {
+      const log = await LogService.createLog(req.body);
+      return ApiResponse.created(res, log, 'Log créé avec succès');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getAll(req, res, next) {
+    try {
+      const logs = await LogService.getAllLogs();
+      return ApiResponse.success(res, logs, 'Liste des logs');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getById(req, res, next) {
+    try {
+      const log = await LogService.getLogById(req.params.id);
+      return ApiResponse.success(res, log, 'Détail du log');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async update(req, res, next) {
+    try {
+      const log = await LogService.updateLog(req.params.id, req.body);
+      return ApiResponse.success(res, log, 'Log mis à jour');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async delete(req, res, next) {
+    try {
+      await LogService.deleteLog(req.params.id);
+      return ApiResponse.success(res, null, 'Log supprimé');
+    } catch (error) {
+      next(error);
+    }
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/services/LogService.js
+</File Name>
+<File Content>
+import prisma from '../config/database.js';
+import { NotFoundException, ValidationException } from '../exceptions/AppException.js';
+
+export default class LogService {
+  static async createLog(data) {
+    return await prisma.log.create({ data });
+  }
+
+  static async getAllLogs() {
+    return await prisma.log.findMany({ orderBy: { createdAt: 'desc' } });
+  }
+
+  static async getLogById(id) {
+    const log = await prisma.log.findUnique({ where: { id } });
+    if (!log) throw new NotFoundException('Log non trouvé');
+    return log;
+  }
+
+  static async updateLog(id, data) {
+    try {
+      return await prisma.log.update({ where: { id }, data });
+    } catch (error) {
+      if (error.code === 'P2025') throw new NotFoundException('Log non trouvé');
+      throw new ValidationException(error.message);
+    }
+  }
+
+  static async deleteLog(id) {
+    try {
+      await prisma.log.delete({ where: { id } });
+      return true;
+    } catch (error) {
+      if (error.code === 'P2025') throw new NotFoundException('Log non trouvé');
+      throw new ValidationException(error.message);
+    }
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/routes/demandeRouter.js
+</File Name>
+<File Content>
+import { Router } from 'express';
+import DemandeController from '../controllers/DemandeController.js';
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Demandes
+ *   description: Gestion des demandes
+ */
+
+/**
+ * @swagger
+ * /api/demandes:
+ *   get:
+ *     summary: Liste les demandes par compte principal
+ *     tags: [Demandes]
+ *     parameters:
+ *       - in: query
+ *         name: account
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Compte principal à rechercher
+ *     responses:
+ *       200:
+ *         description: Liste des demandes
+ *       404:
+ *         description: Aucune demande trouvée
+ */
+router.get('/', DemandeController.listByAccount); // recherche par compte (déjà présent)
+
+/**
+ * @swagger
+ * /api/demandes:
+ *   post:
+ *     summary: Créer une nouvelle demande
+ *     tags: [Demandes]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - type
+ *               - content
+ *               - status
+ *               - account
+ *             properties:
+ *               type:
+ *                 type: string
+ *               content:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *               account:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Demande créée avec succès
+ *       409:
+ *         description: Compte déjà utilisé
+ *       422:
+ *         description: Données invalides
+ */
+router.post('/', DemandeController.create);
+
+/**
+ * @swagger
+ * /api/demandes/all:
+ *   get:
+ *     summary: Liste toutes les demandes
+ *     tags: [Demandes]
+ *     responses:
+ *       200:
+ *         description: Liste des demandes
+ */
+router.get('/all', DemandeController.getAll);
+
+/**
+ * @swagger
+ * /api/demandes/journalized:
+ *   get:
+ *     summary: Liste les demandes journalisées par compte principal
+ *     tags: [Demandes]
+ *     parameters:
+ *       - in: query
+ *         name: account
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Compte principal à rechercher
+ *     responses:
+ *       200:
+ *         description: Liste des demandes journalisées
+ *       404:
+ *         description: Aucune demande trouvée
+ */
+router.get('/journalized', DemandeController.listJournalizedByAccount);
+
+/**
+ * @swagger
+ * /api/demandes/{id}:
+ *   get:
+ *     summary: Récupère une demande par son ID
+ *     tags: [Demandes]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Détail de la demande
+ *       404:
+ *         description: Demande non trouvée
+ */
+router.get('/:id', DemandeController.getById);
+
+/**
+ * @swagger
+ * /api/demandes/{id}:
+ *   put:
+ *     summary: Met à jour une demande
+ *     tags: [Demandes]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               type:
+ *                 type: string
+ *               content:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *               account:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Demande mise à jour
+ *       404:
+ *         description: Demande non trouvée
+ */
+router.put('/:id', DemandeController.update);
+
+/**
+ * @swagger
+ * /api/demandes/{id}:
+ *   delete:
+ *     summary: Supprime une demande
+ *     tags: [Demandes]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Demande supprimée
+ *       404:
+ *         description: Demande non trouvée
+ */
+router.delete('/:id', DemandeController.delete);
+
+export default router; 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/controllers/DemandeController.js
+</File Name>
+<File Content>
+import DemandeService from '../services/DemandeService.js';
+import ApiResponse from '../responses/ApiResponse.js';
+
+export default class DemandeController {
+  static async listByAccount(req, res, next) {
+    try {
+      const { account } = req.query;
+      if (!account) {
+        return ApiResponse.badRequest(res, 'Le compte principal est requis');
+      }
+      const demandes = await DemandeService.listByAccount(account);
+      return ApiResponse.success(res, demandes, 'Demandes trouvées');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async create(req, res, next) {
+    try {
+      const demande = await DemandeService.createDemande(req.body);
+      return ApiResponse.created(res, demande, 'Demande créée avec succès');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getAll(req, res, next) {
+    try {
+      const demandes = await DemandeService.getAllDemandes();
+      return ApiResponse.success(res, demandes, 'Liste des demandes');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getById(req, res, next) {
+    try {
+      const demande = await DemandeService.getDemandeById(req.params.id);
+      return ApiResponse.success(res, demande, 'Détail de la demande');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async update(req, res, next) {
+    try {
+      const demande = await DemandeService.updateDemande(req.params.id, req.body);
+      return ApiResponse.success(res, demande, 'Demande mise à jour');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async delete(req, res, next) {
+    try {
+      await DemandeService.deleteDemande(req.params.id);
+      return ApiResponse.success(res, null, 'Demande supprimée');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async listJournalizedByAccount(req, res, next) {
+    try {
+      const { account } = req.query;
+      if (!account) {
+        return ApiResponse.badRequest(res, 'Le compte principal est requis');
+      }
+      const demandes = await DemandeService.listJournalizedByAccount(account);
+      return ApiResponse.success(res, demandes, 'Demandes journalisées trouvées');
+    } catch (error) {
+      return ApiResponse.error(res, 'Erreur lors de la récupération des demandes journalisées.', 500, error.message || error);
+    }
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/services/DemandeService.js
+</File Name>
+<File Content>
+import prisma from '../config/database.js';
+import { NotFoundException, ValidationException } from '../exceptions/AppException.js';
+
+export default class DemandeService {
+  static async listByAccount(account) {
+    const demandes = await prisma.demande.findMany({
+      where: { account },
+      orderBy: { date: 'desc' },
+    });
+    if (!demandes || demandes.length === 0) throw new NotFoundException('Aucune demande trouvée pour ce compte');
+    return demandes;
+  }
+
+  static async createDemande(data) {
+    return await prisma.demande.create({ data });
+  }
+
+  static async getAllDemandes() {
+    return await prisma.demande.findMany({ orderBy: { date: 'desc' } });
+  }
+
+  static async getDemandeById(id) {
+    const demande = await prisma.demande.findUnique({ where: { id } });
+    if (!demande) throw new NotFoundException('Demande non trouvée');
+    return demande;
+  }
+
+  static async updateDemande(id, data) {
+    try {
+      return await prisma.demande.update({ where: { id }, data });
+    } catch (error) {
+      if (error.code === 'P2025') throw new NotFoundException('Demande non trouvée');
+      throw new ValidationException(error.message);
+    }
+  }
+
+  static async deleteDemande(id) {
+    try {
+      await prisma.demande.delete({ where: { id } });
+      return true;
+    } catch (error) {
+      if (error.code === 'P2025') throw new NotFoundException('Demande non trouvée');
+      throw new ValidationException(error.message);
+    }
+  }
+
+  static async listJournalizedByAccount(account) {
+    // Récupérer toutes les demandes du compte avec leurs logs
+    const demandes = await prisma.demande.findMany({
+      where: { account },
+      include: { logs: true },
+    });
+    // Ne garder que celles qui ont au moins un log
+    return demandes.filter(d => d.logs && d.logs.length > 0);
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/routes/numeroClientRouter.js
+</File Name>
+<File Content>
+import { Router } from 'express';
+import NumeroClientController from '../controllers/NumeroClientController.js';
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: NumeroClients
+ *   description: Gestion des numéros clients Orange
+ */
+
+/**
+ * @swagger
+ * /api/numeros/search:
+ *   get:
+ *     summary: Recherche un client par numéro de téléphone
+ *     tags: [NumeroClients]
+ *     parameters:
+ *       - in: query
+ *         name: phoneNumber
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Numéro de téléphone à rechercher
+ *     responses:
+ *       200:
+ *         description: Client trouvé
+ *       404:
+ *         description: Aucun client trouvé
+ */
+router.get('/search', NumeroClientController.searchByPhoneNumber);
+
+/**
+ * @swagger
+ * /api/numeros:
+ *   post:
+ *     summary: Créer un nouveau numéro client
+ *     tags: [NumeroClients]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *               - cni
+ *               - status
+ *               - clientId
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *               cni:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *                 enum: [Active, Inactive]
+ *               clientId:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: NumeroClient créé avec succès
+ *       409:
+ *         description: Numéro déjà utilisé
+ *       422:
+ *         description: Données invalides
+ */
+router.post('/', NumeroClientController.create);
+
+/**
+ * @swagger
+ * /api/numeros:
+ *   get:
+ *     summary: Liste tous les numéros clients
+ *     tags: [NumeroClients]
+ *     responses:
+ *       200:
+ *         description: Liste des numéros clients
+ */
+router.get('/', NumeroClientController.getAll);
+
+/**
+ * @swagger
+ * /api/numeros/{id}:
+ *   get:
+ *     summary: Récupère un numéro client par son ID
+ *     tags: [NumeroClients]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Détail du numéro client
+ *       404:
+ *         description: NumeroClient non trouvé
+ */
+router.get('/:id', NumeroClientController.getById);
+
+/**
+ * @swagger
+ * /api/numeros/{id}:
+ *   put:
+ *     summary: Met à jour un numéro client
+ *     tags: [NumeroClients]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *               cni:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *                 enum: [Active, Inactive]
+ *               clientId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: NumeroClient mis à jour
+ *       404:
+ *         description: NumeroClient non trouvé
+ */
+router.put('/:id', NumeroClientController.update);
+
+/**
+ * @swagger
+ * /api/numeros/{id}:
+ *   delete:
+ *     summary: Supprime un numéro client
+ *     tags: [NumeroClients]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: NumeroClient supprimé
+ *       404:
+ *         description: NumeroClient non trouvé
+ */
+router.delete('/:id', NumeroClientController.delete);
+
+export default router; 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/controllers/NumeroClientController.js
+</File Name>
+<File Content>
+import NumeroClientService from '../services/NumeroClientService.js';
+import ApiResponse from '../responses/ApiResponse.js';
+import { ValidationException, NotFoundException } from '../exceptions/AppException.js';
+import { validateNumeroClientCreateDto, validateNumeroClientSearchDto } from '../dto/numeroClient.dto.js';
+
+export default class NumeroClientController {
+  static async searchByPhoneNumber(req, res, next) {
+    try {
+      validateNumeroClientSearchDto(req.query);
+      const { phoneNumber } = req.query;
+      const client = await NumeroClientService.findByPhoneNumber(phoneNumber);
+      return ApiResponse.success(res, client, 'Client trouvé');
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        return ApiResponse.validationError(res, error.message);
+      }
+      if (error instanceof NotFoundException) {
+        return ApiResponse.notFound(res, error.message);
+      }
+      return ApiResponse.error(
+        res,
+        'Erreur interne du serveur. Le numéro doit être un numéro Orange Sénégal valide (9 chiffres, commence par 77, 78, 76, 70 ou 33).',
+        500,
+        error.message || error
+      );
+    }
+  }
+
+  static async create(req, res, next) {
+    try {
+      validateNumeroClientCreateDto(req.body);
+      const client = await NumeroClientService.createNumeroClient(req.body);
+      return ApiResponse.created(res, client, 'NumeroClient créé avec succès');
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        return ApiResponse.validationError(res, error.message);
+      }
+      return ApiResponse.error(
+        res,
+        'Erreur lors de la création du numéro client.',
+        500,
+        error.message || error
+      );
+    }
+  }
+
+  static async getAll(req, res, next) {
+    try {
+      const clients = await NumeroClientService.getAllNumeroClients();
+      return ApiResponse.success(res, clients, 'Liste des NumeroClients');
+    } catch (error) {
+      return ApiResponse.error(
+        res,
+        'Erreur lors de la récupération des numéros clients.',
+        500,
+        error.message || error
+      );
+    }
+  }
+
+  static async getById(req, res, next) {
+    try {
+      const client = await NumeroClientService.getNumeroClientById(req.params.id);
+      return ApiResponse.success(res, client, 'Détail du NumeroClient');
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return ApiResponse.notFound(res, error.message);
+      }
+      return ApiResponse.error(
+        res,
+        'Erreur lors de la récupération du numéro client.',
+        500,
+        error.message || error
+      );
+    }
+  }
+
+  static async update(req, res, next) {
+    try {
+      const client = await NumeroClientService.updateNumeroClient(req.params.id, req.body);
+      return ApiResponse.success(res, client, 'NumeroClient mis à jour');
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        return ApiResponse.validationError(res, error.message);
+      }
+      if (error instanceof NotFoundException) {
+        return ApiResponse.notFound(res, error.message);
+      }
+      return ApiResponse.error(
+        res,
+        'Erreur lors de la mise à jour du numéro client.',
+        500,
+        error.message || error
+      );
+    }
+  }
+
+  static async delete(req, res, next) {
+    try {
+      await NumeroClientService.deleteNumeroClient(req.params.id);
+      return ApiResponse.success(res, null, 'NumeroClient supprimé');
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return ApiResponse.notFound(res, error.message);
+      }
+      return ApiResponse.error(
+        res,
+        'Erreur lors de la suppression du numéro client.',
+        500,
+        error.message || error
+      );
+    }
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/services/NumeroClientService.js
+</File Name>
+<File Content>
+import prisma from '../config/database.js';
+import { NotFoundException, ValidationException } from '../exceptions/AppException.js';
+import { validateNumeroClientCreateDto, validateNumeroClientSearchDto } from '../dto/numeroClient.dto.js';
+
+function validateSenegalOrangeNumber(phoneNumber) {
+  // Retirer le préfixe +221 ou 00221 si présent
+  let num = phoneNumber.replace(/^\+221|^00221/, '');
+  // Retirer les espaces éventuels
+  num = num.replace(/\s+/g, '');
+  // Doit être composé uniquement de chiffres
+  if (!/^\d+$/.test(num)) {
+    throw new ValidationException('Le numéro doit contenir uniquement des chiffres.');
+  }
+  // Doit faire 9 chiffres
+  if (num.length !== 9) {
+    throw new ValidationException('Le numéro doit contenir exactement 9 chiffres.');
+  }
+  // Préfixes mobiles Orange : 77, 78, 76, 70 ; Fixe Orange : 33
+  const prefix = num.substring(0, 2);
+  if (["77", "78", "76", "70"].includes(prefix)) {
+    return num;
+  } else if (num.startsWith("33")) {
+    return num;
+  } else {
+    throw new ValidationException('Ce numéro n\'est pas un numéro Orange Sénégal valide.');
+  }
+}
+
+export default class NumeroClientService {
+  static async findByPhoneNumber(phoneNumber) {
+    validateNumeroClientSearchDto({ phoneNumber });
+    const num = validateSenegalOrangeNumber(phoneNumber);
+    const client = await prisma.numeroClient.findUnique({
+      where: { phoneNumber: num },
+      include: { client: true },
+    });
+    if (!client) throw new NotFoundException('Aucun client trouvé avec ce numéro');
+    return client;
+  }
+
+  static async createNumeroClient(data) {
+    validateNumeroClientCreateDto(data);
+    const num = validateSenegalOrangeNumber(data.phoneNumber);
+    return await prisma.numeroClient.create({ data: { ...data, phoneNumber: num } });
+  }
+
+  static async getAllNumeroClients() {
+    return await prisma.numeroClient.findMany({ include: { client: true }, orderBy: { createdAt: 'desc' } });
+  }
+
+  static async getNumeroClientById(id) {
+    const client = await prisma.numeroClient.findUnique({ where: { id }, include: { client: true } });
+    if (!client) throw new NotFoundException('NumeroClient non trouvé');
+    return client;
+  }
+
+  static async updateNumeroClient(id, data) {
+    if (data.phoneNumber) {
+      data.phoneNumber = validateSenegalOrangeNumber(data.phoneNumber);
+    }
+    try {
+      return await prisma.numeroClient.update({ where: { id }, data });
+    } catch (error) {
+      if (error.code === 'P2025') throw new NotFoundException('NumeroClient non trouvé');
+      throw new ValidationException(error.message);
+    }
+  }
+
+  static async deleteNumeroClient(id) {
+    try {
+      await prisma.numeroClient.delete({ where: { id } });
+      return true;
+    } catch (error) {
+      if (error.code === 'P2025') throw new NotFoundException('NumeroClient non trouvé');
+      throw new ValidationException(error.message);
+    }
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+prisma/schema.prisma
+</File Name>
+<File Content>
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  libelle     String   @unique
+  description String?
+  users       User[]
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  nom       String
+  prenom    String
+  email     String   @unique
+  password  String
+  role      Role?    @relation(fields: [roleId], references: [id])
+  roleId    String?
+}
+
+model Client {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  nom       String
+  prenom    String
+  cni       String   @unique
+  numeroClients NumeroClient[]
+}
+
+model NumeroClient {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  phoneNumber  String   @unique
+  cni          String
+  status       String   // "Active" ou "Inactive"
+  createdAt    DateTime @default(now())
+  client       Client?  @relation(fields: [clientId], references: [id])
+  clientId     String?
+}
+
+model Demande {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  type         String   // ex: "creation", "modification"
+  content      String
+  status       String
+  account      String   @unique
+  date         DateTime @default(now())
+  logs         Log[]
+}
+
+model Log {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  action    String
+  message   String
+  createdAt DateTime @default(now())
+  demande   Demande? @relation(fields: [demandeId], references: [id])
+  demandeId String?
+}
+
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+seeder.js
+</File Name>
+<File Content>
+import prisma from './src/config/database.js';
+import bcrypt from 'bcryptjs';
+
+async function main() {
+  // 1. Création du rôle Admin
+  const adminRole = await prisma.role.upsert({
+    where: { libelle: 'Admin' },
+    update: {},
+    create: {
+      libelle: 'Admin',
+      description: 'Administrateur du système',
+    },
+  });
+  console.log('Rôle Admin créé ou déjà existant :', adminRole);
+
+  // 2. Création d'un utilisateur admin
+  const hashedPassword = await bcrypt.hash('admin123', 10);
+  const adminUser = await prisma.user.upsert({
+    where: { email: 'admin@gesclient.com' },
+    update: {},
+    create: {
+      nom: 'Admin',
+      prenom: 'Principal',
+      email: 'admin@gesclient.com',
+      password: hashedPassword,
+      roleId: adminRole.id,
+    },
+  });
+  console.log('Utilisateur admin créé ou déjà existant :', adminUser);
+
+  // 3. Création de clients
+  const client1 = await prisma.client.upsert({
+    where: { cni: '10000000000000001' },
+    update: {},
+    create: {
+      nom: 'Sow',
+      prenom: 'Fatou',
+      cni: '10000000000000001',
+    },
+  });
+  const client2 = await prisma.client.upsert({
+    where: { cni: '20000000000000002' },
+    update: {},
+    create: {
+      nom: 'Diop',
+      prenom: 'Moussa',
+      cni: '20000000000000002',
+    },
+  });
+  console.log('Clients créés ou déjà existants :', client1, client2);
+
+  // 4. Création de numéros clients liés aux clients
+  const numero1 = await prisma.numeroClient.upsert({
+    where: { phoneNumber: '771234567' },
+    update: {},
+    create: {
+      phoneNumber: '771234567',
+      cni: '10000000000000001',
+      status: 'Active',
+      clientId: client1.id,
+    },
+  });
+  const numero2 = await prisma.numeroClient.upsert({
+    where: { phoneNumber: '781234567' },
+    update: {},
+    create: {
+      phoneNumber: '781234567',
+      cni: '20000000000000002',
+      status: 'Inactive',
+      clientId: client2.id,
+    },
+  });
+  console.log('Numéros clients créés ou déjà existants :', numero1, numero2);
+
+  // 5. Création de demandes
+  const demande1 = await prisma.demande.create({
+    data: {
+      type: 'creation',
+      content: 'Demande de création de compte',
+      status: 'En attente',
+      account: 'COMPTE001',
+    },
+  });
+  const demande2 = await prisma.demande.create({
+    data: {
+      type: 'modification',
+      content: 'Demande de modification de numéro',
+      status: 'Traitée',
+      account: 'COMPTE002',
+    },
+  });
+  console.log('Demandes créées :', demande1, demande2);
+
+  // 6. Création de logs
+  const log1 = await prisma.log.create({
+    data: {
+      action: 'SEED',
+      message: 'Initialisation des données de base',
+      demandeId: demande1.id,
+    },
+  });
+  const log2 = await prisma.log.create({
+    data: {
+      action: 'TEST',
+      message: 'Test de création de log',
+      // log2 n'est pas lié à une demande
+    },
+  });
+  console.log('Logs créés :', log1, log2);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  }); 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+README.md
+</File Name>
+<File Content>
+# Gesclient (Max221)
+
+API de gestion de clients Orange Sénégal (Node.js, Express, Prisma, MongoDB)
+
+## 🚀 Installation & Lancement
+
+1. **Cloner le projet**
+   ```bash
+   git clone <url-du-repo>
+   cd Gesclient
+   ```
+
+2. **Installer les dépendances**
+   ```bash
+   npm install
+   ```
+
+3. **Configurer l'environnement**
+   - Crée un fichier `.env` à la racine avec :
+     ```env
+     DATABASE_URL="<url-mongodb>"
+     PORT=3002
+     SERVER_KEY=local
+     LOCAL_SERVER_URL=http://localhost:3002
+     PROD_SERVER_URL=url-production 
+     ```
+   - Remplace `<url-mongodb>` par ton URL MongoDB (exemple Atlas).
+
+4. **Générer le client Prisma** (après toute modif du schéma)
+   ```bash
+   npx prisma generate
+   ```
+
+5. **Lancer le serveur**
+   ```bash
+   npm run start
+   ```
+   L’API sera dispo sur `http://localhost:3002`.
+
+## 🌱 Données de test (Seeder)
+Pour insérer des données de test (admin, clients, numéros, demandes, logs) :
+```bash
+node seeder.js
+```
+- Le seeder crée un admin, 2 clients, 2 numéros, 2 demandes, 2 logs (dont un lié à une demande).
+- Tu peux adapter le fichier `seeder.js` pour ajouter tes propres données.
+
+## 📚 Endpoints principaux
+Tous les endpoints sont documentés et testables via Swagger :
+- Accède à la doc : [http://localhost:3002/api-docs](http://localhost:3002/api-docs)
+
+### Authentification (admin)
+- `/api/auth/login` (à implémenter selon tes besoins)
+
+### Clients
+- `POST   /api/clients` : Créer un client (nom, prenom, cni)
+- `GET    /api/clients` : Lister tous les clients
+- `GET    /api/clients/{id}` : Détail d’un client
+- `PUT    /api/clients/{id}` : Modifier un client
+- `DELETE /api/clients/{id}` : Supprimer un client
+
+### Numéros clients
+- `POST   /api/numeros` : Créer un numéro (validation stricte Orange)
+- `GET    /api/numeros` : Lister tous les numéros
+- `GET    /api/numeros/search?phoneNumber=...` : Rechercher un client par numéro (validation stricte Orange)
+- `GET    /api/numeros/{id}` : Détail d’un numéro
+- `PUT    /api/numeros/{id}` : Modifier un numéro
+- `DELETE /api/numeros/{id}` : Supprimer un numéro
+
+### Demandes
+- `POST   /api/demandes` : Créer une demande
+- `GET    /api/demandes?account=...` : Lister les demandes d’un compte principal
+- `GET    /api/demandes/all` : Lister toutes les demandes
+- `GET    /api/demandes/journalized?account=...` : Lister les demandes journalisées (ayant au moins un log)
+- `GET    /api/demandes/{id}` : Détail d’une demande
+- `PUT    /api/demandes/{id}` : Modifier une demande
+- `DELETE /api/demandes/{id}` : Supprimer une demande
+
+### Logs
+- `POST   /api/logs` : Créer un log (peut être lié à une demande)
+- `GET    /api/logs` : Lister tous les logs
+- `GET    /api/logs/{id}` : Détail d’un log
+- `PUT    /api/logs/{id}` : Modifier un log
+- `DELETE /api/logs/{id}` : Supprimer un log
+
+## 🧪 Tester les endpoints
+- Utilise Swagger (`/api-docs`) pour tester tous les endpoints en direct.
+- Tu peux aussi utiliser Postman, Insomnia, ou `curl`.
+
+## 📝 Bonnes pratiques
+- **Ne commit jamais le fichier `.env`** (il est dans `.gitignore`).
+- **Regénère Prisma** (`npx prisma generate`) après toute modif du schéma.
+- **Utilise le seeder** pour avoir des données de test réalistes.
+- **Lis les messages d’erreur** : ils sont explicites pour la validation des numéros et CNI.
+
+## 📦 Structure du projet
+- `src/` : code source (routes, services, contrôleurs, middlewares, etc.)
+- `prisma/` : schéma Prisma
+- `seeder.js` : script d’initialisation des données
+- `.env` : variables d’environnement (non versionné)
+
+## 🌿 Travailler avec les branches Git
+
+Pour créer une nouvelle branche (par exemple pour une nouvelle fonctionnalité ou un correctif) :
+
+```bash
+git checkout -b nom-de-ta-branche
+```
+
+Pour voir toutes les branches :
+```bash
+git branch
+```
+
+Pour changer de branche :
+```bash
+git checkout nom-de-ta-branche
+```
+
+Pour pousser ta branche sur le dépôt distant :
+```bash
+git push origin nom-de-ta-branche
+```
+
+---
+**Max221 – Projet Gesclient** # GesClient-back
+
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/dto/numeroClient.dto.js
+</File Name>
+<File Content>
+import { ValidationException } from '../exceptions/AppException.js';
+
+export function validateNumeroClientCreateDto(data) {
+  if (!data || typeof data !== 'object') {
+    throw new ValidationException('Aucune donnée reçue.');
+  }
+  if (!data.phoneNumber || typeof data.phoneNumber !== 'string') {
+    throw new ValidationException('Le numéro de téléphone est requis.');
+  }
+  // La validation stricte du numéro sera faite dans le service
+  if (!data.cni || typeof data.cni !== 'string') {
+    throw new ValidationException('Le CNI est requis.');
+  }
+  if (!data.status || !['Active', 'Inactive'].includes(data.status)) {
+    throw new ValidationException('Le statut doit être "Active" ou "Inactive".');
+  }
+  if (!data.clientId || typeof data.clientId !== 'string') {
+    throw new ValidationException('L\'identifiant du client est requis.');
+  }
+}
+
+export function validateNumeroClientSearchDto(query) {
+  if (!query.phoneNumber || typeof query.phoneNumber !== 'string') {
+    throw new ValidationException('Le numéro de téléphone est requis pour la recherche.');
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+.gitignore
+</File Name>
+<File Content>
+node_modules/
+.env
+
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/config/database.js
+</File Name>
+<File Content>
+import { PrismaClient } from '@prisma/client';
+
+// Singleton pour PrismaClient
+let prisma;
+
+if (!global.prisma) {
+  prisma = new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  });
+  global.prisma = prisma;
+} else {
+  prisma = global.prisma;
+}
+
+export default prisma;
+
+// Fonction pour tester la connexion
+export async function testConnection() {
+  try {
+    await prisma.$connect();
+    console.log('✅ Connexion à la base de données MongoDB réussie');
+  } catch (error) {
+    console.error('❌ Erreur de connexion à la base de données MongoDB:', error);
+    process.exit(1);
+  }
+} 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/responses/ApiResponse.js
+</File Name>
+<File Content>
+class ApiResponse {
+  static success(res, data = null, message = 'Opération réussie', statusCode = 200) {
+    return res.status(statusCode).json({
+      success: true,
+      message,
+      data,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  static error(res, message = 'Une erreur est survenue', statusCode = 500, errors = null) {
+    return res.status(statusCode).json({
+      success: false,
+      message,
+      errors,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  static created(res, data = null, message = 'Ressource créée avec succès') {
+    // Toujours 201 pour une création
+    return this.success(res, data, message, 201);
+  }
+
+  static noContent(res, message = 'Aucun contenu') {
+    return this.success(res, null, message, 204);
+  }
+
+  static badRequest(res, message = 'Requête invalide', errors = null) {
+    return this.error(res, message, 400, errors);
+  }
+
+  static unauthorized(res, message = 'Non autorisé') {
+    return this.error(res, message, 401);
+  }
+
+  static forbidden(res, message = 'Accès interdit') {
+    return this.error(res, message, 403);
+  }
+
+  static notFound(res, message = 'Ressource non trouvée') {
+    return this.error(res, message, 404);
+  }
+
+  static conflict(res, message = 'Conflit de données', errors = null) {
+    return this.error(res, message, 409, errors);
+  }
+
+  static validationError(res, errors) {
+    return this.error(res, 'Erreur de validation', 422, errors);
+  }
+}
+
+export default ApiResponse; 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/config/swagger.js
+</File Name>
+<File Content>
+import swaggerJSDoc from 'swagger-jsdoc';
+import dotenv from 'dotenv';
+dotenv.config();
+
+// Ajout de la logique SERVER_KEY
+const SERVER_KEY = process.env.SERVER_KEY || 'local';
+const LOCAL_URL = process.env.LOCAL_SERVER_URL || 'http://localhost:3002';
+const PROD_URL = process.env.PROD_SERVER_URL || 'https://quincaillerie-latest.onrender.com';
+
+const serverUrl = SERVER_KEY === 'prod' ? PROD_URL : LOCAL_URL;
+
+const swaggerDefinition = {
+  openapi: '3.0.0',
+  info: {
+    title: 'API Gesclient',
+    version: '1.0.0',
+    description: 'Documentation de l’API Gesclient (Max221)',
+    contact: {
+      name: 'Max221',
+      email: 'contact@max221.com',
+    },
+  },
+  servers: [
+    {
+      url: serverUrl,
+      description: 'Serveur API',
+    },
+  ],
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+      },
+    },
+    schemas: {
+      Role: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          name: { type: 'string', example: 'Gestionnaire' },
+          description: { type: 'string', example: 'Peut gérer les catégories et produits' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' }
+        }
+      },
+      Utilisateur: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          email: { type: 'string', example: 'user@email.com' },
+          nom: { type: 'string', example: 'Barro' },
+          prenom: { type: 'string', example: 'Issa' },
+          isActive: { type: 'boolean', example: true },
+          roleId: { type: 'integer', example: 1 },
+          role: { $ref: '#/components/schemas/Role' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' }
+        }
+      },
+      Categorie: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          nom: { type: 'string', example: 'Fer' },
+          description: { type: 'string', example: 'Catégorie de fers' },
+          isArchived: { type: 'boolean', example: false },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' }
+        }
+      },
+      SousCategorie: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          nom: { type: 'string', example: 'Fer de 8' },
+          description: { type: 'string', example: 'Sous-catégorie de fers' },
+          categorieId: { type: 'integer', example: 1 },
+          isArchived: { type: 'boolean', example: false },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' }
+        }
+      },
+      Produit: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          nom: { type: 'string', example: 'Fer de 8 - barre' },
+          description: { type: 'string', example: 'Barre de fer de 8mm' },
+          prix: { type: 'number', example: 3500 },
+          stock: { type: 'integer', example: 100 },
+          imagePath: { type: 'string', example: '/uploads/fer8.jpg' },
+          sousCategorieId: { type: 'integer', example: 1 },
+          isArchived: { type: 'boolean', example: false },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' }
+        }
+      },
+      Fournisseur: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          numero: { type: 'string', example: 'F001' },
+          nom: { type: 'string', example: 'Fournisseur A' },
+          email: { type: 'string', example: 'fournisseur@email.com' },
+          telephone: { type: 'string', example: '771234567' },
+          adresse: { type: 'string', example: 'Dakar' },
+          isArchived: { type: 'boolean', example: false },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' }
+        }
+      }
+    }
+  },
+  security: [
+    {
+      bearerAuth: [],
+    },
+  ],
+};
+
+const options = {
+  swaggerDefinition,
+  apis: ['./src/routes/*.js'],
+};
+
+const swaggerSpec = swaggerJSDoc(options);
+
+export default swaggerSpec; 
+</File Content>
+</Opened Files>
+<Opened Files>
+<File Name>
+src/exceptions/AppException.js
+</File Name>
+<File Content>
+export class AppException extends Error {
+  constructor(message, statusCode = 500, errors = null) {
+    super(message);
+    this.statusCode = statusCode;
+    this.errors = errors;
+    this.isOperational = true;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+export class ValidationException extends AppException {
+  constructor(message = 'Erreur de validation', errors = null) {
+    super(message, 422, errors);
+  }
+}
+
+export class NotFoundException extends AppException {
+  constructor(message = 'Ressource non trouvée') {
+    super(message, 404);
+  }
+}
+
+export class UnauthorizedException extends AppException {
+  constructor(message = 'Non autorisé') {
+    super(message, 401);
+  }
+}
+
+export class ForbiddenException extends AppException {
+  constructor(message = 'Accès interdit') {
+    super(message, 403);
+  }
+}
+
+export class ConflictException extends AppException {
+  constructor(message = 'Conflit de données', errors = null) {
+    super(message, 409, errors);
+  }
+}
+
+export class BusinessRuleException extends AppException {
+  constructor(message = 'Règle métier violée') {
+    super(message, 400);
+  }
+} 
+</File Content>
+</Opened Files>
