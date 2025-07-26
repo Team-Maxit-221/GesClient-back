@@ -1,11 +1,15 @@
 import prisma from '../config/database.js';
 import { NotFoundException, ValidationException } from '../exceptions/AppException.js';
-import { validateClientDto } from '../dto/client.dto.js';
+import { 
+  validateClientDto, 
+  transformClientForDisplay,
+  transformClientList
+} from '../dto/client.dto.js';
 
 function validateSenegalCNI(cni) {
-  // Doit être composé de 17 chiffres
-  if (!/^\d{17}$/.test(cni)) {
-    throw new ValidationException('Le numéro CNI doit contenir exactement 17 chiffres.');
+  // Doit être composé de 13 chiffres
+  if (!/^\d{13}$/.test(cni)) {
+    throw new ValidationException('Le numéro CNI doit contenir exactement 13 chiffres.');
   }
   // Doit commencer par 1 ou 2
   if (!(cni.startsWith('1') || cni.startsWith('2'))) {
@@ -16,28 +20,41 @@ function validateSenegalCNI(cni) {
 
 export default class ClientService {
   static async createClient(data) {
-    validateClientDto(data);
-    data.cni = validateSenegalCNI(data.cni);
-    return await prisma.client.create({ data });
+    await validateClientDto(data);
+    const created = await prisma.client.create({ 
+      data,
+      include: { numeroClients: true }
+    });
+    return transformClientForDisplay(created);
   }
 
   static async getAllClients() {
-    return await prisma.client.findMany({ include: { numeroClients: true } });
+    const clients = await prisma.client.findMany({ 
+      include: { numeroClients: true } 
+    });
+    return transformClientList(clients);
   }
 
   static async getClientById(id) {
-    const client = await prisma.client.findUnique({ where: { id }, include: { numeroClients: true } });
+    const client = await prisma.client.findUnique({ 
+      where: { id }, 
+      include: { numeroClients: true } 
+    });
     if (!client) throw new NotFoundException('Client non trouvé');
-    return client;
+    return transformClientForDisplay(client);
   }
 
   static async updateClient(id, data) {
     if (data.cni) {
-      data.cni = validateSenegalCNI(data.cni);
+      await validateClientDto({ ...data, cni: data.cni });
     }
-    validateClientDto({ ...data, cni: data.cni });
     try {
-      return await prisma.client.update({ where: { id }, data });
+      const updated = await prisma.client.update({ 
+        where: { id }, 
+        data,
+        include: { numeroClients: true }
+      });
+      return transformClientForDisplay(updated);
     } catch (error) {
       if (error.code === 'P2025') throw new NotFoundException('Client non trouvé');
       throw new ValidationException(error.message);

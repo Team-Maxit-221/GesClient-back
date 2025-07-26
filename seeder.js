@@ -30,21 +30,21 @@ async function main() {
 
   // 3. Création de clients
   const client1 = await prisma.client.upsert({
-    where: { cni: '10000000000000001' },
+    where: { cni: '1000000000001' },
     update: {},
     create: {
       nom: 'Sow',
       prenom: 'Fatou',
-      cni: '10000000000000001',
+      cni: '1000000000001',
     },
   });
   const client2 = await prisma.client.upsert({
-    where: { cni: '20000000000000002' },
+    where: { cni: '2000000000002' },
     update: {},
     create: {
       nom: 'Diop',
       prenom: 'Moussa',
-      cni: '20000000000000002',
+      cni: '2000000000002',
     },
   });
   console.log('Clients créés ou déjà existants :', client1, client2);
@@ -55,9 +55,8 @@ async function main() {
     update: {},
     create: {
       phoneNumber: '771234567',
-      cni: '10000000000000001',
+      cni: '1000000000001',
       status: 'Active',
-      clientId: client1.id,
     },
   });
   const numero2 = await prisma.numeroClient.upsert({
@@ -65,9 +64,8 @@ async function main() {
     update: {},
     create: {
       phoneNumber: '781234567',
-      cni: '20000000000000002',
+      cni: '2000000000002',
       status: 'Inactive',
-      clientId: client2.id,
     },
   });
   console.log('Numéros clients créés ou déjà existants :', numero1, numero2);
@@ -96,6 +94,10 @@ async function main() {
     data: {
       action: 'SEED',
       message: 'Initialisation des données de base',
+      success: true,
+      url: '/seeder',
+      method: 'POST',
+      statusCode: 200,
       demandeId: demande1.id,
     },
   });
@@ -103,6 +105,10 @@ async function main() {
     data: {
       action: 'TEST',
       message: 'Test de création de log',
+      success: true,
+      url: '/seeder',
+      method: 'POST',
+      statusCode: 200,
       // log2 n'est pas lié à une demande
     },
   });

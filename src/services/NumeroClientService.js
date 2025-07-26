@@ -1,6 +1,12 @@
 import prisma from '../config/database.js';
 import { NotFoundException, ValidationException } from '../exceptions/AppException.js';
-import { validateNumeroClientCreateDto, validateNumeroClientSearchDto } from '../dto/numeroClient.dto.js';
+import { 
+  validateNumeroClientCreateDto, 
+  validateNumeroClientSearchDto,
+  transformNumeroClientForDisplay,
+  transformSearchResult,
+  transformNumeroClientList
+} from '../dto/numeroClient.dto.js';
 
 function validateSenegalOrangeNumber(phoneNumber) {
   // Retirer le préfixe +221 ou 00221 si présent
@@ -28,30 +34,40 @@ function validateSenegalOrangeNumber(phoneNumber) {
 
 export default class NumeroClientService {
   static async findByPhoneNumber(phoneNumber) {
-    validateNumeroClientSearchDto({ phoneNumber });
-    const num = validateSenegalOrangeNumber(phoneNumber);
+    const num = validateNumeroClientSearchDto({ phoneNumber });
     const client = await prisma.numeroClient.findUnique({
       where: { phoneNumber: num },
       include: { client: true },
     });
     if (!client) throw new NotFoundException('Aucun client trouvé avec ce numéro');
-    return client;
+    return transformSearchResult(client);
   }
 
   static async createNumeroClient(data) {
-    validateNumeroClientCreateDto(data);
+    await validateNumeroClientCreateDto(data);
     const num = validateSenegalOrangeNumber(data.phoneNumber);
-    return await prisma.numeroClient.create({ data: { ...data, phoneNumber: num } });
+    const created = await prisma.numeroClient.create({ 
+      data: { ...data, phoneNumber: num },
+      include: { client: true }
+    });
+    return transformNumeroClientForDisplay(created);
   }
 
   static async getAllNumeroClients() {
-    return await prisma.numeroClient.findMany({ include: { client: true }, orderBy: { createdAt: 'desc' } });
+    const numeros = await prisma.numeroClient.findMany({ 
+      include: { client: true }, 
+      orderBy: { createdAt: 'desc' } 
+    });
+    return transformNumeroClientList(numeros);
   }
 
   static async getNumeroClientById(id) {
-    const client = await prisma.numeroClient.findUnique({ where: { id }, include: { client: true } });
+    const client = await prisma.numeroClient.findUnique({ 
+      where: { id }, 
+      include: { client: true } 
+    });
     if (!client) throw new NotFoundException('NumeroClient non trouvé');
-    return client;
+    return transformNumeroClientForDisplay(client);
   }
 
   static async updateNumeroClient(id, data) {
@@ -59,7 +75,12 @@ export default class NumeroClientService {
       data.phoneNumber = validateSenegalOrangeNumber(data.phoneNumber);
     }
     try {
-      return await prisma.numeroClient.update({ where: { id }, data });
+      const updated = await prisma.numeroClient.update({ 
+        where: { id }, 
+        data,
+        include: { client: true }
+      });
+      return transformNumeroClientForDisplay(updated);
     } catch (error) {
       if (error.code === 'P2025') throw new NotFoundException('NumeroClient non trouvé');
       throw new ValidationException(error.message);
