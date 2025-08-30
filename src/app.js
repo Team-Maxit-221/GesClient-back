@@ -11,10 +11,18 @@ import numeroClientRouter from './routes/numeroClientRouter.js';
 import demandeRouter from './routes/demandeRouter.js';
 import logRouter from './routes/logRouter.js';
 import clientRouter from './routes/clientRouter.js';
+import logRequestObserver from './middlewares/logRequestObserver.js';
+import { ValidationException, NotFoundException } from './exceptions/AppException.js';
+import ApiResponse from './responses/ApiResponse.js';
 
 dotenv.config();
 
 const app = express();
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1); // ou l'IP de ton proxy
+} else {
+  app.set('trust proxy', false);
+}
 const PORT = process.env.PORT || 3000;
 
 // Test de connexion à la base MongoDB
@@ -49,6 +57,9 @@ app.use(express.urlencoded({ extended: true }));
 // Servir les fichiers statiques
 app.use('/uploads', express.static('uploads'));
 
+// Middleware pour logger les requêtes API
+app.use(logRequestObserver);
+
 // Route de base
 app.get('/', (req, res) => {
   res.json({
@@ -75,12 +86,31 @@ app.use('*', (req, res) => {
 
 // Middleware de gestion d'erreurs global
 app.use((err, req, res, next) => {
+  console.error('Erreur:', err);
+  
+  // Gestion des exceptions personnalisées
+  if (err instanceof ValidationException) {
+    return ApiResponse.badRequest(res, err.message);
+  }
+  
+  if (err instanceof NotFoundException) {
+    return ApiResponse.notFound(res, err.message);
+  }
+  
+  // Erreurs Prisma
+  if (err.code === 'P2002') {
+    return ApiResponse.conflict(res, 'Une ressource avec ces données existe déjà');
+  }
+  
+  if (err.code === 'P2025') {
+    return ApiResponse.notFound(res, 'Ressource non trouvée');
+  }
+  
+  // Erreur générique
   console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Erreur interne du serveur',
-    error: process.env.NODE_ENV === 'development' ? err.message : {}
-  });
+  return ApiResponse.error(res, 'Erreur interne du serveur', 500, 
+    process.env.NODE_ENV === 'development' ? err.message : null
+  );
 });
 
 // Démarrage du serveur

@@ -41,11 +41,10 @@ model Client {
 model NumeroClient {
   id           String   @id @default(auto()) @map("_id") @db.ObjectId
   phoneNumber  String   @unique
-  cni          String
+  cni          String   @unique
   status       String   // "Active" ou "Inactive"
   createdAt    DateTime @default(now())
-  client       Client?  @relation(fields: [clientId], references: [id])
-  clientId     String?
+  client       Client?  @relation(fields: [cni], references: [cni])
 }
 
 model Demande {
@@ -60,8 +59,14 @@ model Demande {
 
 model Log {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  action    String
+  action    String   @default("API_REQUEST")
   message   String
+  success   Boolean
+  ip        String?
+  userId    String?
+  url       String
+  method    String
+  statusCode Int
   createdAt DateTime @default(now())
   demande   Demande? @relation(fields: [demandeId], references: [id])
   demandeId String?
